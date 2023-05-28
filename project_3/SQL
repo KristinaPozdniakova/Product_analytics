@@ -1,0 +1,397 @@
+1. Распределение числа пользовательских сессий
+
+Перед изучением user journey полезно уточнить объём данных, участвующих в исследовании. Например, если пользователи не заходят в продукт более трёх раз, то путь стоит изучать только в рамках первых трёх сессий. 
+
+Напишите запрос, который получает из БД максимальное число сессий для каждого из пользователей, установивших продукт в период с 2021-06-15 по 2021-07-01. Постройте распределения максимального числа сессий с разбивкой по типам устройств.
+
+Формируя профили пользователей, учтите, что в исследование user journey должны попадать и зарегистрированные, и незарегистрированные пользователи, то есть анализ нужно проводить по visitor_uuid.
+
+
+WITH profiles as (
+
+    /* Профили пользователей */
+
+    SELECT DISTINCT visitor_uuid,
+           FIRST_VALUE(c.city_name) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS city_name,
+           FIRST_VALUE(a.first_date) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS first_date,
+           FIRST_VALUE(a.device_type) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS device_type, 
+           FIRST_VALUE(a.source) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS source
+    FROM module3_analytics_events AS a
+    LEFT JOIN module3_cities c ON a.city_id = c.city_id
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+
+),
+sessions AS (
+
+    /* Максимальное число сессий на пользователя */
+    
+    SELECT visitor_uuid,
+           MAX(visit_num) AS sessions_num
+    FROM module3_analytics_events 
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND log_date BETWEEN '2021-06-15' AND '2021-07-01'
+    GROUP BY visitor_uuid
+    
+)
+
+/* Профили пользователей и их сессии */
+
+SELECT p.device_type,
+       s.sessions_num,
+       COUNT(DISTINCT s.visitor_uuid) AS uniques
+FROM sessions s
+LEFT JOIN profiles p ON s.visitor_uuid = p.visitor_uuid
+GROUP BY p.device_type,
+         s.sessions_num
+ORDER BY p.device_type,
+         s.sessions_num
+         
+         
+2. Распределение первых покупок по номерам сессий
+Кроме общего числа сессий, стоит уточнить, в рамках какой сессии чаще всего наступает целевое событие — первая покупка. Напишите запрос, рассчитывающий для каждого покупателя номер сессии, в которой была совершена первая покупка. Рассчитайте медианный номер сессии с разбивкой по платформам.         
+
+
+WITH profiles as (
+
+    /* Профили пользователей */
+
+    SELECT DISTINCT visitor_uuid,
+           FIRST_VALUE(c.city_name) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS city_name,
+           FIRST_VALUE(a.first_date) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS first_date,
+           FIRST_VALUE(a.device_type) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS device_type, 
+           FIRST_VALUE(a.source) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS source
+    FROM module3_analytics_events AS a
+    LEFT JOIN module3_cities c ON a.city_id = c.city_id
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+
+),
+orders AS (
+
+    /* Покупки и их номера */
+    
+    SELECT visitor_uuid,
+           visit_num,
+           DENSE_RANK() OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS event_num
+    FROM module3_analytics_events 
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND log_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND event = 'order'
+    
+)
+
+/* Расчёт медиан */
+
+SELECT p.device_type,
+       COUNT (DISTINCT o.visitor_uuid) AS buyers,
+       PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY visit_num) AS median_visit_num
+FROM orders o
+LEFT JOIN profiles p ON o.visitor_uuid = p.visitor_uuid
+WHERE o.event_num = 1
+GROUP BY p.device_type
+ORDER BY buyers DESC
+
+         
+3. Изучение последовательности действий пользователей
+
+Итак, вы выяснили, что чаще всего пользователи не совершают более трёх сессий, а покупки чаще всего происходят во время первой сессии. Напишите запрос, который поможет проанализировать последовательность действий, совершаемых пользователем в рамках первой сессии. Результат выполнения запроса должен содержать:
+
+Наименование аналитического события.
+
+Номер аналитического события в цепочке событий, совершённых каждым из пользователей.
+
+Число пользователей, совершивших событие. Например, если у 100 пользователей первым было событие authorization, вторым — main_page, а третьим — order, то должна получиться таблица:
+
+authorization	1 100
+
+main_page	2 100
+
+order	3 100
+
+К результату добавьте разбивку по городам, датам и источникам привлечения пользователей, а также по типам устройств.
+
+Для каждого пользователя получите первые 10 событий.
+
+
+WITH profiles as (
+
+    /* Профили пользователей */
+
+    SELECT DISTINCT visitor_uuid,
+           FIRST_VALUE(c.city_name) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS city_name,
+           FIRST_VALUE(a.first_date) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS first_date,
+           FIRST_VALUE(a.device_type) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS device_type, 
+           FIRST_VALUE(a.source) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS source
+    FROM module3_analytics_events AS a
+    LEFT JOIN module3_cities c ON a.city_id = c.city_id
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+
+),
+events AS (
+
+    /* События, совершённые пользователями за первую сессию, и их номера */
+    
+    SELECT visitor_uuid,
+           visit_num,
+           event,
+           DENSE_RANK() OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS event_num
+    FROM module3_analytics_events 
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND log_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+    
+),
+events_profiles AS (
+
+    /* События и профили вместе */
+    
+    SELECT e.visitor_uuid,
+           p.city_name,
+           p.first_date,
+           p.device_type,
+           p.source,
+           visit_num,
+           event,
+           event_num
+    FROM events e
+    LEFT JOIN profiles p ON e.visitor_uuid = p.visitor_uuid
+    
+)
+
+/* Финальные вычисления */
+
+SELECT city_name,
+       first_date,
+       device_type,
+       source,
+       visit_num,
+       event_num,
+       event,
+       COUNT(visitor_uuid) AS events
+FROM events_profiles
+WHERE event_num <= 10
+GROUP BY city_name,
+         first_date,
+         device_type,
+         source,
+         visit_num,
+         event_num,
+         event
+         
+         
+4.User journey
+
+Напишите запрос для формирования user journey и его визуализации в Tableau. Запрос должен возвращать:
+
+Идентификатор пользователя.
+
+Наименование аналитического события.
+
+Минимальный лайфтайм в минутах от момента первого входа в продукт до наступления аналитического события.
+
+Для каждого пользователя добавьте город, дату и источник привлечения, а также тип устройства.
+
+
+WITH profiles as (
+
+    /* Профили пользователей */
+
+    SELECT DISTINCT visitor_uuid,
+           FIRST_VALUE(c.city_name) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS city_name,
+           FIRST_VALUE(a.first_date) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS first_date,
+           FIRST_VALUE(a.device_type) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS device_type, 
+           FIRST_VALUE(a.source) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS source
+    FROM module3_analytics_events AS a
+    LEFT JOIN module3_cities c ON a.city_id = c.city_id
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+
+),
+events AS (
+
+    /* События, совершённые пользователями за первую сессию, и их номера */
+    
+    SELECT visitor_uuid,
+           visit_num,
+           event,
+           DENSE_RANK() OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS event_num
+    FROM module3_analytics_events 
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND log_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+    
+),
+events_profiles AS (
+
+    /* События и профили вместе */
+    
+    SELECT e.visitor_uuid,
+           p.city_name,
+           p.first_date,
+           p.device_type,
+           p.source,
+           visit_num,
+           event,
+           event_num
+    FROM events e
+    LEFT JOIN profiles p ON e.visitor_uuid = p.visitor_uuid
+    
+)
+
+/* Финальные вычисления */
+
+SELECT city_name,
+       first_date,
+       device_type,
+       source,
+       visit_num,
+       event_num,
+       event,
+       COUNT(visitor_uuid) AS events
+FROM events_profiles
+WHERE event_num <= 10
+GROUP BY city_name,
+         first_date,
+         device_type,
+         source,
+         visit_num,
+         event_num,
+         event
+         
+         
+5. RFM-анализ
+
+Подготовьте данные для проведения RFM-анализа платящих пользователей в Tableau. Для каждого покупателя определите RFM-сегменты, город, дату и источник привлечения, а также тип устройства. Для исследования RFM-сегментации используйте интервал регистрации пользователей с 2021-05-01 по 2021-06-01.
+
+
+WITH profiles as (
+
+    /* Профили пользователей */
+
+    SELECT DISTINCT visitor_uuid,
+           FIRST_VALUE(c.city_name) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS city_name,
+           FIRST_VALUE(a.first_date) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS first_date,
+           FIRST_VALUE(a.device_type) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS device_type, 
+           FIRST_VALUE(a.source) OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS source
+    FROM module3_analytics_events AS a
+    LEFT JOIN module3_cities c ON a.city_id = c.city_id
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+
+),
+events AS (
+
+    /* События, совершённые пользователями за первую сессию, и их номера */
+    
+    SELECT visitor_uuid,
+           visit_num,
+           event,
+           DENSE_RANK() OVER (PARTITION BY visitor_uuid ORDER BY datetime) AS event_num
+    FROM module3_analytics_events 
+    WHERE first_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND log_date BETWEEN '2021-06-15' AND '2021-07-01'
+          AND visit_num = 1
+    
+),
+events_profiles AS (
+
+    /* События и профили вместе */
+    
+    SELECT e.visitor_uuid,
+           p.city_name,
+           p.first_date,
+           p.device_type,
+           p.source,
+           visit_num,
+           event,
+           event_num
+    FROM events e
+    LEFT JOIN profiles p ON e.visitor_uuid = p.visitor_uuid
+    
+)
+
+/* Финальные вычисления */
+
+SELECT city_name,
+       first_date,
+       device_type,
+       source,
+       visit_num,
+       event_num,
+       event,
+       COUNT(visitor_uuid) AS events
+FROM events_profiles
+WHERE event_num <= 10
+GROUP BY city_name,
+         first_date,
+         device_type,
+         source,
+         visit_num,
+         event_num,
+         event
+         
+         
+6. ABC-XYZ-анализ
+
+Подготовьте данные для проведения ABC-XYZ-анализа партнёрских сетей ресторанов в Tableau. Для каждой сети определите ABC- и XYZ-сегменты.
+
+WITH daily_revenue AS (
+
+    /* Рассчитываем недельную выручку сетей */
+
+    SELECT p.chain,
+           date_trunc('week', log_date) as log_week,
+           SUM(revenue) AS revenue
+    FROM module3_analytics_events e
+    LEFT JOIN module3_partners p on p.rest_id = e.rest_id
+    WHERE event = 'order'
+    GROUP BY p.chain,
+             date_trunc('week', log_date)
+    
+),
+partners AS (
+
+    /* Рассчитываем коэффициенты вариативности */
+
+    SELECT chain,
+           SUM(revenue) AS revenue,
+           STDDEV(revenue) AS std,
+           STDDEV(revenue) / AVG(revenue) AS var_coeff
+    FROM daily_revenue
+    GROUP BY chain
+
+),
+abc_xyz AS (
+
+    /* Рассчитываем доли от общей выручки */
+
+    SELECT chain,
+           revenue,
+           SUM(revenue) OVER (ORDER BY revenue DESC) AS cumulative_revenue,
+           SUM(revenue) OVER () tot_rev,
+           SUM(revenue) OVER (ORDER BY revenue DESC) / SUM(revenue) OVER () AS perc,
+           std,
+           var_coeff          
+    FROM partners
+    ORDER BY revenue DESC
+
+)
+
+/* Распределяем партнёрские рестораны по группам */
+    
+SELECT chain,
+       CASE 
+           WHEN perc <= 0.8 THEN 'A'
+           WHEN perc <= 0.95 THEN 'B'
+           ELSE 'C'
+       END AS abc,
+       CASE 
+           WHEN var_coeff <= 0.1 THEN 'X'
+           WHEN var_coeff <= 0.3 THEN 'Y'
+           ELSE 'Z'
+       END AS xyz 
+FROM abc_xyz
+
+
