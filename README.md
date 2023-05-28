@@ -61,6 +61,7 @@
 
 **[Дашборд](https://public.tableau.com/app/profile/.72538875/viz/ABtest_16851100148800/sheet19?publish=yes)** 
 
+**[SQL](https://github.com/KristinaPozdniakova/Product_analytics/tree/main/project_4)**
 
 
 
