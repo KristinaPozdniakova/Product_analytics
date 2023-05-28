@@ -1,0 +1,111 @@
+1. Список маркетинговых активностей
+
+Подготовьте список маркетинговых активностей, привязанных к основным международным праздникам в 2020 году.
+
+
+            SELECT  name, 
+                    region, 
+                    start_dt,
+                    finish_dt 
+            FROM holidays_events_project
+   
+   
+2. Получение DAU новичков
+Подсчитайте число новых пользователей, привлекаемых в онлайн-магазин ежедневно, за период с 2020-08-11 и 2020-09-10.
+
+
+            WITH
+
+            -- Сформируем профиль пользователя
+
+            profiles AS (
+
+                SELECT DISTINCT user_id,
+                       FIRST_VALUE(install_date) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS install_date,
+                       MAX(registration_flag) OVER (PARTITION BY user_id) AS registration_flag,
+                       FIRST_VALUE(region) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_region,
+                       FIRST_VALUE(device) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_device
+                FROM sessions_project_history
+                WHERE install_date BETWEEN TO_DATE('2020-08-11', 'YYYY-MM-DD')
+                   AND TO_DATE('2020-09-10', 'YYYY-MM-DD')
+
+            )
+            SELECT install_date,
+                   COUNT(user_id) AS new_dau
+            FROM profiles
+            GROUP BY install_date
+          
+            
+3. Распределение новичков по устройствам и регионам 
+
+Подготовьте таблицу разбивки новых пользователей, привлечённых за период с 2020-08-11 и 2020-09-10, по типам устройств и географическим регионам. Результат должен состоять из трёх колонок: first_region, first_device и new_users (число новых пользователей).
+
+
+      WITH 
+
+            -- Сформируем профиль пользователя
+   
+            profiles AS (
+           
+                SELECT DISTINCT user_id,
+                       MIN(install_date) OVER (PARTITION BY user_id) AS install_date,
+                       MAX(registration_flag) OVER (PARTITION BY user_id) AS registration_flag,
+                       FIRST_VALUE(region) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_region,
+                       FIRST_VALUE(device) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_device
+                FROM sessions_project_history
+                WHERE install_date BETWEEN '2020-08-11' AND '2020-09-10'
+                
+            )
+            SELECT first_region,
+                   first_device,
+                   COUNT(DISTINCT user_id) AS new_users
+            FROM profiles
+            GROUP BY first_region, first_device
+            
+            
+      
+4. Конверсия и выручка
+
+Сформируйте таблицу профилей пользователей. Для каждого профиля посчитайте число транзакций в категории «Компьютерная техника» и суммарные траты в этой категории (выручка магазина за покупки, совершённые пользователем).
+
+
+WITH 
+
+            -- Сформируем профиль пользователя
+   
+            profiles AS (
+           
+                SELECT DISTINCT user_id,
+                       MIN(install_date) OVER (PARTITION BY user_id) AS install_date,
+                       MAX(registration_flag) OVER (PARTITION BY user_id) AS registration_flag,
+                       FIRST_VALUE(region) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_region,
+                       FIRST_VALUE(device) OVER (PARTITION BY user_id ORDER BY session_start_ts) AS first_device
+                FROM sessions_project_history
+                WHERE install_date BETWEEN '2020-08-11' AND '2020-09-10'
+            
+            ),
+            
+            -- Получим данные о покупках
+            
+            orders AS (
+
+                  SELECT user_id,
+                         COUNT(purchases_number) AS transactions,
+                         SUM(price) AS revenue
+                  FROM purchases_project_history
+                  WHERE category = 'computer_equipments'
+                  GROUP BY user_id
+
+            )
+            
+            -- Объединим всё в единый набор данных
+            
+            SELECT p.user_id,
+                   p.install_date,
+                   o.transactions,
+                   o.revenue 
+            FROM profiles p
+            LEFT JOIN orders o ON o.user_id = p.user_id
+            
+            
+     
