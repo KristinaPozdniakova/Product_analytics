@@ -27,6 +27,8 @@
 
 **[Дашборд](https://public.tableau.com/app/profile/.72538875/viz/Keymetricsforthepaybackofafooddeliveryservice/Dashboard2)**
 
+**[SQL код](https://github.com/KristinaPozdniakova/Product_analytics/tree/main/project_2)**
+
 
 # Проект 3. **Исследование точек роста сервиса доставки еды «Всё.из.кафе»**
 
