@@ -106,6 +106,3 @@ WITH
                    o.revenue 
             FROM profiles p
             LEFT JOIN orders o ON o.user_id = p.user_id
-            
-            
-     
