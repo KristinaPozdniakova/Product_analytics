@@ -1,0 +1,186 @@
+**1.DAU**
+Напишите запрос для получения DAU и подсчёта числа аналитических событий в день. Результат запроса должен включать три поля:
+log_date — дата;
+dau — DAU для текущей даты;
+events — общее число событий для текущей даты.
+
+
+SELECT log_date,
+    COUNT(DISTINCT user_id) AS dau,
+    COUNT(name) AS events
+FROM events_log
+GROUP BY log_date
+ORDER BY log_date
+
+
+**2.Активные пользователи по источникам привлечения**
+Напишите запрос для получения расчёта числа уникальных пользователей, посетивших сервис из разных источников привлечения. Результат запроса должен содержать два поля:
+utm_source — тип аналитического события;
+users — число уникальных пользователей, сгенерировавших хотя бы одно событие выбранного типа.
+
+
+SELECT utm_source,
+    COUNT(DISTINCT user_id) AS users
+FROM events_log
+GROUP BY utm_source
+ORDER BY utm_source
+
+
+**3.Воронка просмотров**
+Постройте воронку просмотров фильмов. При построении воронки учтите, что она начинается с события pageOpen (пользователь заходит в кинотеатр и взаимодействует хотя бы с одной страницей) и заканчивается событием commentMovie (пользователь оставляет комментарий к фильму).
+Учтите, что пользователи используют поиск двух видов (поиск по тегам и поиск в поисковой строке), чтобы найти нужные фильмы.
+
+
+WITH page_open AS
+  (SELECT dt,
+          log_date,
+          user_id,
+          app_id,
+          utm_source,
+          name
+   FROM events_log
+   WHERE name = 'pageOpen' ),
+     search_type_table AS
+  (SELECT dt,
+          log_date,
+          user_id,
+          app_id,
+          utm_source,
+          name,
+          object_details
+   FROM events_log
+   WHERE name IN ('searchDialog', 'tagClick') ),
+     start_movie AS
+  (SELECT dt,
+          log_date,
+          user_id,
+          app_id,
+          utm_source,
+          object_id,
+          object_details,
+          name
+   FROM events_log
+   WHERE name = 'startMovie' ),
+     end_movie AS
+  (SELECT dt,
+          log_date,
+          user_id,
+          app_id,
+          utm_source,
+          object_id,
+          name
+   FROM events_log
+   WHERE name = 'endMovie'),
+     rating AS
+  (SELECT dt,
+          user_id,
+          app_id,
+          object_id
+   FROM events_log
+   WHERE name = 'rateMovie' ),
+     COMMENT AS
+  (SELECT dt,
+          user_id,
+          app_id,
+          object_id
+   FROM events_log
+   WHERE name = 'commentMovie' )
+SELECT page_open.app_id AS app_id,
+       page_open.utm_source AS utm_source,
+       page_open.log_date AS log_date,
+       COUNT(DISTINCT page_open.user_id) AS users_open_page,
+       COUNT(DISTINCT search_type_table.user_id) AS users_search_type,
+       COUNT(DISTINCT start_movie.user_id) AS users_start_movie,
+       COUNT(DISTINCT end_movie.user_id) AS users_end_movie,
+       COUNT(DISTINCT rating.user_id) AS users_rating,
+       COUNT(DISTINCT comment.user_id) AS users_comment
+FROM page_open
+LEFT JOIN search_type_table ON page_open.log_date = search_type_table.log_date
+                               AND page_open.user_id = search_type_table.user_id
+                               AND page_open.app_id = search_type_table.app_id
+LEFT JOIN start_movie ON search_type_table.log_date = start_movie.log_date
+                      AND search_type_table.user_id = start_movie.user_id
+                      AND search_type_table.app_id = start_movie.app_id
+                      AND search_type_table.object_details = start_movie.object_details
+LEFT JOIN end_movie ON start_movie.user_id = end_movie.user_id
+                      AND start_movie.app_id = end_movie.app_id
+LEFT JOIN rating ON end_movie.user_id = rating.user_id
+LEFT JOIN COMMENT ON rating.user_id = comment.user_id
+WHERE (search_type_table.dt IS NULL
+       OR page_open.dt <= search_type_table.dt
+       AND (start_movie.dt IS NULL
+            OR search_type_table.dt <= start_movie.dt
+            AND (end_movie.dt IS NULL
+                 OR start_movie.dt <= end_movie.dt)
+            AND (rating.dt IS NULL
+                 OR end_movie.dt <= rating.dt)))
+GROUP BY page_open.log_date,
+         page_open.app_id,
+         page_open.utm_source
+ORDER BY page_open.log_date
+
+
+**4.Топ фильмов**
+Напишите запрос, который возвращает таблицу с наименованием фильма, числом уникальных зрителей и средним рейтингом фильма.
+
+
+WITH top AS
+  (SELECT object_id,
+         COUNT(DISTINCT user_id) AS users
+  FROM events_log
+  WHERE name = 'endMovie'
+  GROUP BY object_id),
+           movie_rates AS
+  (SELECT object_id,
+         AVG(CAST(object_value AS FLOAT)) AS avg_rate
+  FROM events_log
+  WHERE name = 'rateMovie'
+  GROUP BY object_id
+  )
+SELECT t.object_id,
+       t.users,
+       m.avg_rate
+FROM top t
+LEFT JOIN movie_rates m ON t.object_id=m.object_id
+ORDER BY users DESC
+
+
+**5.Воронка покупки**
+Напишите запрос для построения воронки покупок. Включите в воронку покупок все покупки, кроме подписок. 
+Например, в воронку должно войти предложение off.oneMovie, но не должна войти подписка subs.noAds.
+
+
+SELECT log_date,
+       app_id,
+       utm_source,
+       name,
+       object_id  AS offer_name,
+       COUNT(DISTINCT user_id) AS all_users
+FROM events_log
+WHERE name IN ('purchase') AND object_id ~ 'off'
+GROUP BY log_date,
+         app_id,
+         utm_source,
+         name,
+         object_id
+         
+         
+**6. Длительность просмотра фильмов на пользователя**
+Для расчёта средней продолжительности просмотра фильмов выведите суммарную длительность просмотра и количество уникальных пользователей
+с разбивкой по дате, типу устройств и источнику привлечения пользователей.
+
+
+SELECT log_date,
+       app_id,
+       utm_source,
+       SUM(CAST(object_value AS FLOAT)) AS sum_duration,
+       COUNT(DISTINCT user_id) AS users
+FROM events_log
+WHERE name IN ('endMovie')
+GROUP BY log_date,
+       app_id,
+       utm_source
+         
+         
+         
+        
