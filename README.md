@@ -10,6 +10,7 @@
 **[Презентация с анализом и выводами](https://drive.google.com/file/d/1m8v97dy97KSkNg_VMNfn2eftcdBYd9GU/view?usp=sharing)**
 
 **[Дашборд](https://public.tableau.com/app/profile/.72538875/viz/DashboardMetricsPA/Dashboard2)**
+**[SQL](https://github.com/KristinaPozdniakova/Product_analytics/tree/main/project_1)**
 
 
 # Проект 2. **Основные метрики окупаемости сервиса доставки еды «Всё.из.кафе»**
