@@ -57,7 +57,7 @@
 - Оценить корректность его проведения
 - Проанализировать результаты эксперимента
 
-**Презентация с анализом и выводами**
+**[Презентация с анализом и выводами](https://drive.google.com/file/d/1euWKCIrifn6RCh1ipvStHRkIijM0mRzF/view?usp=sharing)**
 
 **[Дашборд](https://public.tableau.com/app/profile/.72538875/viz/ABtest_16851100148800/sheet19?publish=yes)** 
 
